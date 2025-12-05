@@ -5,6 +5,7 @@ import { SmartInput } from './components/SmartInput';
 import { RecordList } from './components/RecordList';
 import { AdminDashboard } from './components/AdminDashboard';
 import { UserManagement } from './components/UserManagement';
+import { StatsReport } from './components/StatsReport'; // Import new component
 import { mockStore } from './services/mockStore';
 import { User, PayrollRecord, Role } from './types';
 import { ShieldCheck } from 'lucide-react';
@@ -43,7 +44,6 @@ export default function App() {
   const handleLoginSubmit = (e: React.FormEvent) => {
       e.preventDefault();
       setLoginError('');
-      // We use employeeId for login now, but keeping mockStore.login simple
       const u = mockStore.login(loginId, loginPwd);
       if (u) {
           setUser(u);
@@ -125,14 +125,6 @@ export default function App() {
     );
   }
 
-  const isManagement = 
-    user.role === Role.ADMIN || 
-    user.role === Role.BRANCH_PRESIDENT ||
-    user.role === Role.VP_CORPORATE ||
-    user.role === Role.VP_RETAIL ||
-    user.role === Role.VP_PERSONAL ||
-    user.role === Role.DEPARTMENT_MANAGER;
-
   return (
     <Layout user={user} onLogout={handleLogout} currentTab={currentTab} onTabChange={setCurrentTab}>
       <header className="mb-6 flex justify-between items-center">
@@ -141,7 +133,7 @@ export default function App() {
             {currentTab === 'dashboard' && '工作台 / Dashboard'}
             {currentTab === 'records' && '储备明细 / Records'}
             {currentTab === 'input' && '智能录入 / Smart Input'}
-            {currentTab === 'stats' && '全行统计 / Global Stats'}
+            {currentTab === 'stats' && '统计报表 / Reports'}
             {currentTab === 'users' && '用户管理 / Admin'}
           </h2>
           <p className="text-slate-500 text-sm">
@@ -158,8 +150,8 @@ export default function App() {
       
       {currentTab === 'input' && <SmartInput user={user} onSave={handleSaveRecord} />}
       
-      {currentTab === 'stats' && isManagement && (
-         <AdminDashboard records={records} allUsers={allUsers} currentUser={user} />
+      {currentTab === 'stats' && (
+         <StatsReport records={records} />
       )}
 
       {currentTab === 'users' && user.role === Role.ADMIN && (

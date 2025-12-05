@@ -1,8 +1,8 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { PayrollRecord, User, RecordStatus, Role, LineType } from '../types';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-import { AlertTriangle, TrendingUp, Calendar, Target, Award, Copy, MessageSquare } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ReTooltip } from 'recharts';
+import { AlertTriangle, TrendingUp, Calendar, Target, Award, Briefcase, Clock, ChevronDown, ChevronUp, Flag } from 'lucide-react';
 
 interface AdminDashboardProps {
   records: PayrollRecord[];
@@ -13,18 +13,19 @@ interface AdminDashboardProps {
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658'];
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ records, allUsers, currentUser }) => {
+  const [showAllOverdue, setShowAllOverdue] = useState(false);
+  const [showAllStale, setShowAllStale] = useState(false);
   
-  // --- 1. Aggregation Logic based on Role (The Drill-down) ---
+  // Stale Projects Sorting
+  const [staleSortBy, setStaleSortBy] = useState<'employees' | 'days'>('days');
+
+  // --- Aggregation Logic (The Drill-down) ---
   const breakdownCharts = useMemo(() => {
     const charts = [];
-    
-    // Helper to group records by a key
     const groupBy = (key: keyof PayrollRecord | 'updatedByName') => {
       const map = new Map<string, number>();
       records.forEach(r => {
-        // If grouping by status "Completed" or just "Estimated" reserve? 
-        // Request says "Reserve Percentage", so usually Estimated Payroll count.
-        const val = r.estimatedPayroll;
+        const val = r.estimatedNewPayroll;
         const groupKey = key === 'updatedByName' ? r.updatedByName : String(r[key]);
         map.set(groupKey, (map.get(groupKey) || 0) + val);
       });
@@ -33,155 +34,197 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ records, allUser
         .sort((a, b) => b.value - a.value);
     };
 
-    // Logic:
-    // Staff -> Companies
-    // Manager -> Staff, Companies
-    // VP -> Departments, Staff, Companies
-    // President -> Lines, Departments, Staff, Companies
-    
-    // Everyone sees Companies
     charts.push({ title: '各企业储备占比', data: groupBy('companyName') });
 
     if (currentUser.role !== Role.STAFF) {
-      // Manager & up see Staff breakdown
       charts.push({ title: '各人员储备占比', data: groupBy('updatedByName') });
     }
 
     if (currentUser.role === Role.VP_CORPORATE || currentUser.role === Role.VP_RETAIL || currentUser.role === Role.VP_PERSONAL || currentUser.role === Role.BRANCH_PRESIDENT || currentUser.role === Role.ADMIN) {
-       // VP & up see Dept breakdown
        charts.push({ title: '各部门/网点储备占比', data: groupBy('department') });
     }
 
     if (currentUser.role === Role.BRANCH_PRESIDENT || currentUser.role === Role.ADMIN) {
-       // President sees Line breakdown
        charts.push({ title: '各条线储备占比', data: groupBy('line') });
     }
 
-    // Reverse order so higher level aggregation comes first visually
     return charts.reverse();
 
   }, [records, currentUser.role]);
 
-  // --- 2. KPI Metrics (Respecting the filtered records passed in) ---
+  // --- KPI Metrics ---
   const metrics = useMemo(() => {
     const now = new Date();
+    // Reset to start of day for comparison
+    now.setHours(0,0,0,0);
+    
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
+    
+    // Calculate Week Range (Mon - Fri)
+    const dayOfWeek = now.getDay(); // 0 (Sun) - 6 (Sat)
+    const diffToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMon);
+    const friday = new Date(monday);
+    friday.setDate(monday.getDate() + 4);
 
-    let monthLandedCount = 0;   
-    let monthProjectedCount = 0; 
-    let yearLandedCount = 0;     
+    let monthPendingCount = 0; // 本月待落地
+    let weekUpcomingCount = 0; // 本周即将落地
+    let overdueCount = 0;      // 逾期数
+    let overduePayroll = 0;    // 逾期人数
+    let overdueList: PayrollRecord[] = [];
+    let yearLandedCount = 0;   // 年度已落地
+
+    // Stale Projects (>30 days not visited)
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    let staleList: { record: PayrollRecord, days: number }[] = [];
 
     records.forEach(r => {
-      const d = new Date(r.landingDate);
+      const d = new Date(r.estimatedLandingDate);
+      d.setHours(0,0,0,0); 
+
+      const lastVisit = new Date(r.lastVisitDate);
+      lastVisit.setHours(0,0,0,0);
+      
       const isThisMonth = d.getMonth() === currentMonth && d.getFullYear() === currentYear;
       const isThisYear = d.getFullYear() === currentYear;
 
-      if (r.status === RecordStatus.COMPLETED) {
-        if (isThisYear) yearLandedCount += r.estimatedPayroll;
-        if (isThisMonth) monthLandedCount += r.estimatedPayroll;
-      }
+      // 1. Month Pending (Following + This Month)
       if (r.status === RecordStatus.FOLLOWING && isThisMonth) {
-        monthProjectedCount += r.estimatedPayroll;
+        monthPendingCount += r.estimatedNewPayroll;
+      }
+
+      // 2. Week Upcoming (Following + Within Mon-Fri range)
+      if (r.status === RecordStatus.FOLLOWING && d >= monday && d <= friday) {
+        weekUpcomingCount += r.estimatedNewPayroll;
+      }
+
+      // 3. Overdue (Following + Date < Today)
+      if (r.status === RecordStatus.FOLLOWING && d < now) {
+        overdueCount++;
+        overduePayroll += r.estimatedNewPayroll;
+        overdueList.push(r);
+      }
+
+      // 4. Yearly Landed
+      if (r.status === RecordStatus.COMPLETED && isThisYear) {
+          yearLandedCount += r.estimatedNewPayroll; // Use new payroll instead of total employees
+      }
+
+      // 5. Stale (> 30 Days)
+      if (lastVisit < thirtyDaysAgo && r.status === RecordStatus.FOLLOWING) {
+          const diffTime = Math.abs(now.getTime() - lastVisit.getTime());
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          staleList.push({ record: r, days: diffDays });
       }
     });
 
-    // Calculate Target based on Role Scope
-    // Staff -> Own Target
-    // Mgr -> Sum of Dept Staff Targets
-    // VP -> Sum of Line Staff Targets
-    // Pres -> Sum of All Targets
-    let target = 0;
-    
-    // We need to filter allUsers based on the same scope as records to sum their targets
-    // A simple way is to use the record filtering logic or just sum targets of users relevant to current user
+    // Calculate Target
+    let yearlyTarget = 0;
     if (currentUser.role === Role.STAFF) {
-        target = currentUser.yearlyTarget;
+        yearlyTarget = currentUser.yearlyTarget;
     } else if (currentUser.role === Role.DEPARTMENT_MANAGER) {
-        target = allUsers.filter(u => u.department === currentUser.department).reduce((acc, u) => acc + u.yearlyTarget, 0);
+        yearlyTarget = allUsers.filter(u => u.department === currentUser.department).reduce((acc, u) => acc + u.yearlyTarget, 0);
     } else if (currentUser.role === Role.VP_CORPORATE) {
-        target = allUsers.filter(u => u.line === LineType.COMPANY).reduce((acc, u) => acc + u.yearlyTarget, 0);
+        yearlyTarget = allUsers.filter(u => u.line === LineType.COMPANY).reduce((acc, u) => acc + u.yearlyTarget, 0);
     } else if (currentUser.role === Role.VP_RETAIL) {
-        target = allUsers.filter(u => u.line === LineType.RETAIL).reduce((acc, u) => acc + u.yearlyTarget, 0);
+        yearlyTarget = allUsers.filter(u => u.line === LineType.RETAIL).reduce((acc, u) => acc + u.yearlyTarget, 0);
     } else if (currentUser.role === Role.VP_PERSONAL) {
-        target = allUsers.filter(u => u.line === LineType.PERSONAL).reduce((acc, u) => acc + u.yearlyTarget, 0);
+        yearlyTarget = allUsers.filter(u => u.line === LineType.PERSONAL).reduce((acc, u) => acc + u.yearlyTarget, 0);
     } else {
-        // President / Admin
-        target = allUsers.reduce((acc, u) => acc + u.yearlyTarget, 0);
+        yearlyTarget = allUsers.reduce((acc, u) => acc + u.yearlyTarget, 0);
     }
 
-    const gap = Math.max(0, target - yearLandedCount);
-    const progress = target > 0 ? (yearLandedCount / target) * 100 : 0;
+    const completionRate = yearlyTarget > 0 ? (yearLandedCount / yearlyTarget) * 100 : 0;
 
-    return { monthLandedCount, monthProjectedCount, yearLandedCount, target, gap, progress };
+    return { 
+      monthPendingCount, 
+      weekUpcomingCount, 
+      overdueCount, 
+      overduePayroll,
+      overdueList: overdueList.sort((a,b) => new Date(a.estimatedLandingDate).getTime() - new Date(b.estimatedLandingDate).getTime()),
+      yearlyTarget,
+      yearLandedCount,
+      completionRate,
+      staleList
+    };
   }, [records, currentUser, allUsers]);
 
-
-  // --- 3. WeCom Reminder Logic ---
-  const handleCopyReminder = (userName: string) => {
-    const text = `【代发储备提醒】@${userName} 您有项目长期未更新，请及时登录系统维护进度。`;
-    navigator.clipboard.writeText(text).then(() => {
-      alert(`已复制提醒内容到剪贴板，请发送给 ${userName}：\n\n${text}`);
-    });
-  };
-
-  // Find users who haven't updated recently (Mock logic: Staff who haven't updated in 7 days or just random for demo)
-  const staleUsers = useMemo(() => {
-      // In a real app, check last update time of their records
-      // Here, just filter staff in the current user's scope
-      let relevantStaff: User[] = [];
-      if (currentUser.role === Role.BRANCH_PRESIDENT || currentUser.role === Role.ADMIN) {
-          relevantStaff = allUsers.filter(u => u.role === Role.STAFF);
-      } else if (currentUser.role === Role.DEPARTMENT_MANAGER) {
-          relevantStaff = allUsers.filter(u => u.role === Role.STAFF && u.department === currentUser.department);
+  // Sorted Stale List
+  const sortedStaleList = useMemo(() => {
+      const list = [...metrics.staleList];
+      if (staleSortBy === 'employees') {
+          list.sort((a, b) => b.record.totalEmployees - a.record.totalEmployees);
       } else {
-          // VP
-           relevantStaff = allUsers.filter(u => u.role === Role.STAFF && u.line === currentUser.line);
+          list.sort((a, b) => b.days - a.days);
       }
-      // Return first 3 for demo
-      return relevantStaff.slice(0, 3);
-  }, [allUsers, currentUser]);
+      return list;
+  }, [metrics.staleList, staleSortBy]);
 
 
   return (
     <div className="space-y-6">
       
-      {/* KPI Cards */}
+      {/* Yearly KPI Row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+         <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 rounded-xl shadow-lg text-white flex justify-between items-center">
+             <div>
+                 <p className="text-blue-100 text-sm mb-1 flex items-center gap-1"><Flag size={16}/> 年度任务指标</p>
+                 <h2 className="text-3xl font-bold">{metrics.yearlyTarget.toLocaleString()} <span className="text-base font-normal opacity-80">人</span></h2>
+             </div>
+             <div className="text-right">
+                 <p className="text-blue-100 text-sm mb-1">年度完成率</p>
+                 <h2 className="text-3xl font-bold">{metrics.completionRate.toFixed(1)}%</h2>
+             </div>
+         </div>
+         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+             <div>
+                 <p className="text-slate-500 text-sm mb-1">年度已落地代发</p>
+                 <h2 className="text-3xl font-bold text-slate-800">{metrics.yearLandedCount.toLocaleString()}</h2>
+             </div>
+             <div className="h-16 w-16 rounded-full border-4 border-slate-100 flex items-center justify-center">
+                <Award className="text-yellow-500" size={32} />
+             </div>
+         </div>
+      </div>
+
+      {/* KPI Cards (Monthly/Weekly) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
           <div className="absolute top-0 right-0 p-3 opacity-10"><Calendar size={64} className="text-blue-600" /></div>
-          <p className="text-sm font-medium text-slate-500 mb-1">本月已落地 (人)</p>
+          <p className="text-sm font-medium text-slate-500 mb-1">本月待落地 (人)</p>
           <div className="flex items-baseline gap-2 mb-2">
-            <h3 className="text-3xl font-bold text-slate-900">{metrics.monthLandedCount}</h3>
+            <h3 className="text-3xl font-bold text-slate-900">{metrics.monthPendingCount}</h3>
           </div>
-          <div className="text-xs text-slate-500"><span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">预计还可落地: {metrics.monthProjectedCount}</span></div>
+          <p className="text-xs text-slate-400">当前跟进中且计划本月落地的总人数</p>
         </div>
 
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
-           <div className="absolute top-0 right-0 p-3 opacity-10"><Award size={64} className="text-purple-600" /></div>
-          <p className="text-sm font-medium text-slate-500 mb-1">今年累计已代发 (人)</p>
-          <h3 className="text-3xl font-bold text-slate-900 mb-2">{metrics.yearLandedCount}</h3>
-          <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-            <div className="bg-purple-600 h-full transition-all duration-1000" style={{width: `${Math.min(100, metrics.progress)}%`}}></div>
-          </div>
+           <div className="absolute top-0 right-0 p-3 opacity-10"><Clock size={64} className="text-green-600" /></div>
+          <p className="text-sm font-medium text-slate-500 mb-1">本周即将落地 (人)</p>
+          <h3 className="text-3xl font-bold text-slate-900 mb-2">{metrics.weekUpcomingCount}</h3>
+          <p className="text-xs text-slate-400">周一至周五计划落地人数</p>
         </div>
 
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
-           <div className="absolute top-0 right-0 p-3 opacity-10"><Target size={64} className="text-red-600" /></div>
-          <p className="text-sm font-medium text-slate-500 mb-1">年度指标缺口</p>
+           <div className="absolute top-0 right-0 p-3 opacity-10"><AlertTriangle size={64} className="text-red-600" /></div>
+          <p className="text-sm font-medium text-slate-500 mb-1">逾期未落地 (企业数)</p>
           <div className="flex items-baseline gap-2">
-            <h3 className="text-3xl font-bold text-red-600">{metrics.gap.toLocaleString()}</h3>
+            <h3 className="text-3xl font-bold text-red-600">{metrics.overdueCount}</h3>
+            <span className="text-sm text-red-400">({metrics.overduePayroll}人)</span>
           </div>
-          <p className="text-xs text-slate-400 mt-1">目标: {metrics.target.toLocaleString()}</p>
+          <p className="text-xs text-slate-400 mt-1">已过预计时间仍未完成</p>
         </div>
 
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
            <div className="flex items-center gap-4 h-full">
-            <div className="p-3 bg-green-100 text-green-600 rounded-lg"><TrendingUp size={24} /></div>
+            <div className="p-3 bg-purple-100 text-purple-600 rounded-lg"><Briefcase size={24} /></div>
             <div>
-              <p className="text-sm text-slate-500">当前总储备池</p>
+              <p className="text-sm text-slate-500">总储备池规模</p>
               <h3 className="text-2xl font-bold text-slate-900">
-                {records.reduce((acc, r) => acc + r.estimatedPayroll, 0).toLocaleString()}
+                {records.reduce((acc, r) => acc + r.estimatedNewPayroll, 0).toLocaleString()}
               </h3>
             </div>
           </div>
@@ -199,83 +242,121 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ records, allUser
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {breakdownCharts.map((chart, idx) => (
-                    <div key={idx} className="h-64 border border-slate-100 rounded-lg p-2 bg-slate-50/50">
+                    <div key={idx} className="h-72 border border-slate-100 rounded-lg p-2 bg-slate-50/50 flex flex-col">
                         <p className="text-xs text-center font-medium text-slate-500 mb-2">{chart.title}</p>
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={chart.data}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={40}
-                                    outerRadius={70}
-                                    paddingAngle={2}
-                                    dataKey="value"
-                                    label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}
-                                >
-                                    {chart.data.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                    ))}
-                                </Pie>
-                                <Tooltip />
-                            </PieChart>
-                        </ResponsiveContainer>
+                        <div className="flex-1 min-h-0">
+                          <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                  <Pie
+                                      data={chart.data}
+                                      cx="50%"
+                                      cy="50%"
+                                      innerRadius={40}
+                                      outerRadius={65}
+                                      paddingAngle={2}
+                                      dataKey="value"
+                                      label={({name, percent}) => {
+                                         // Shorten long names
+                                         const shortName = name.length > 5 ? name.substring(0, 4) + '..' : name;
+                                         return `${shortName} ${(percent * 100).toFixed(0)}%`;
+                                      }}
+                                      labelLine={true}
+                                  >
+                                      {chart.data.map((entry, index) => (
+                                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                      ))}
+                                  </Pie>
+                                  <ReTooltip />
+                              </PieChart>
+                          </ResponsiveContainer>
+                        </div>
                     </div>
                 ))}
             </div>
         </div>
 
-        {/* Monitoring / WeCom Alerts */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 lg:col-span-1 flex flex-col">
-          <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <AlertTriangle size={18} className="text-orange-500"/>
-            督导催办 (WeCom)
-          </h3>
-          
-          <div className="flex-1 overflow-y-auto space-y-4">
-            <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
-              <p className="text-xs font-bold text-orange-800 mb-2 uppercase">建议催办名单</p>
-              <p className="text-xs text-orange-600 mb-3">以下人员超过7天未更新进度，点击按钮复制催办话术发送至企业微信。</p>
-              
-              <div className="space-y-2">
-                 {staleUsers.map(u => (
-                    <div key={u.id} className="flex items-center justify-between bg-white p-2 rounded shadow-sm border border-orange-100">
-                        <div>
-                            <span className="font-medium text-sm text-slate-700">{u.name}</span>
-                            <span className="text-xs text-slate-400 ml-1">({u.department})</span>
+        {/* Right Column: Overdue & Stale */}
+        <div className="space-y-6 lg:col-span-1">
+            
+            {/* Overdue Module */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col max-h-[400px]">
+                <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2 text-red-600">
+                    <AlertTriangle size={18}/>
+                    逾期未落地 ({metrics.overdueCount})
+                </h3>
+                
+                <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+                    {metrics.overdueList.slice(0, showAllOverdue ? undefined : 3).map(r => (
+                    <div key={r.id} className="p-3 border border-red-100 bg-red-50 rounded-lg">
+                        <div className="flex justify-between items-start mb-1">
+                            <span className="font-bold text-slate-800 text-sm truncate w-32" title={r.companyName}>{r.companyName}</span>
+                            <span className="text-xs bg-red-200 text-red-800 px-1.5 rounded">{r.estimatedNewPayroll}人</span>
                         </div>
-                        <button 
-                            onClick={() => handleCopyReminder(u.name)}
-                            className="text-xs bg-orange-100 text-orange-700 px-2 py-1.5 rounded hover:bg-orange-200 transition-colors flex items-center gap-1"
-                        >
-                            <Copy size={12}/> 复制提醒
-                        </button>
+                        <div className="flex justify-between items-center text-xs text-slate-500">
+                            <span>预计: {new Date(r.estimatedLandingDate).toLocaleDateString()}</span>
+                            <span>{r.updatedByName}</span>
+                        </div>
                     </div>
-                 ))}
-                 {staleUsers.length === 0 && <p className="text-xs text-slate-400 text-center">暂无待催办人员</p>}
-              </div>
+                    ))}
+                    {metrics.overdueList.length > 3 && (
+                        <button 
+                            onClick={() => setShowAllOverdue(!showAllOverdue)}
+                            className="w-full text-center text-xs text-blue-500 hover:text-blue-700 py-1"
+                        >
+                            {showAllOverdue ? '收起' : `查看更多 (${metrics.overdueList.length - 3})`}
+                        </button>
+                    )}
+                </div>
             </div>
 
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-               <p className="text-xs font-bold text-blue-600 mb-2">本月即将落地 (7天内)</p>
-               <ul className="space-y-2">
-                 {records
-                   .filter(r => r.status === RecordStatus.FOLLOWING)
-                   .sort((a,b) => new Date(a.landingDate).getTime() - new Date(b.landingDate).getTime())
-                   .slice(0, 3)
-                   .map(r => (
-                     <li key={r.id} className="text-xs flex justify-between items-center text-blue-900 border-b border-blue-100 last:border-0 pb-1 last:pb-0">
-                       <div className="flex flex-col">
-                           <span className="font-medium truncate max-w-[120px]">{r.companyName}</span>
-                           <span className="text-[10px] text-blue-400">{r.updatedByName}</span>
-                       </div>
-                       <span className="font-mono bg-white px-1 rounded">{new Date(r.landingDate).toLocaleDateString().slice(5)}</span>
-                     </li>
-                   ))
-                 }
-               </ul>
+            {/* Stale Module (>30 Days) */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col max-h-[500px]">
+                <div className="flex items-center justify-between mb-4">
+                     <h3 className="font-bold text-slate-800 flex items-center gap-2 text-amber-600">
+                        <Clock size={18}/>
+                        超30天未走访 ({sortedStaleList.length})
+                    </h3>
+                    <div className="flex text-xs bg-slate-100 rounded p-0.5">
+                        <button 
+                          className={`px-2 py-0.5 rounded ${staleSortBy === 'days' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}
+                          onClick={() => setStaleSortBy('days')}
+                        >天数</button>
+                         <button 
+                          className={`px-2 py-0.5 rounded ${staleSortBy === 'employees' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}
+                          onClick={() => setStaleSortBy('employees')}
+                        >规模</button>
+                    </div>
+                </div>
+
+                 <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+                    {sortedStaleList.slice(0, showAllStale ? undefined : 5).map(({record, days}) => (
+                    <div key={record.id} className="p-3 border border-amber-100 bg-amber-50 rounded-lg">
+                        <div className="flex justify-between items-start mb-1">
+                            <span className="font-bold text-slate-800 text-sm truncate w-32" title={record.companyName}>{record.companyName}</span>
+                            <span className="text-xs bg-amber-200 text-amber-800 px-1.5 rounded font-bold">{days}天</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
+                            <span>规模: {record.totalEmployees}人</span>
+                            <span>上次: {new Date(record.lastVisitDate).toLocaleDateString()}</span>
+                        </div>
+                        <div className="text-xs text-slate-400 flex justify-between">
+                            <span>{record.updatedByName}</span>
+                            <span>预计新增: {record.estimatedNewPayroll}</span>
+                        </div>
+                    </div>
+                    ))}
+                     {sortedStaleList.length === 0 && <p className="text-xs text-slate-400 text-center py-4">无长期未走访项目</p>}
+                    {sortedStaleList.length > 5 && (
+                        <button 
+                            onClick={() => setShowAllStale(!showAllStale)}
+                            className="w-full text-center text-xs text-blue-500 hover:text-blue-700 py-1"
+                        >
+                            {showAllStale ? '收起' : `查看更多 (${sortedStaleList.length - 5})`}
+                        </button>
+                    )}
+                </div>
             </div>
-          </div>
+
         </div>
       </div>
     </div>

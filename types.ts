@@ -25,7 +25,7 @@ export const DEPARTMENTS = {
 export enum RecordStatus {
   FOLLOWING = '跟进中',
   COMPLETED = '已落地',
-  PAUSED = '暂停',
+  FAILED = '无法落地', // Replaced PAUSED
 }
 
 export interface User {
@@ -50,19 +50,20 @@ export interface PayrollRecord {
   id: string;
   companyName: string;      // 1. 代发企业名称
   totalEmployees: number;   // 2. 企业总人数
-  estimatedPayroll: number; // 3. 预计代发人数
-  landingDate: string;      // 4. 落地时间 (ISO Date String)
+  estimatedNewPayroll: number; // 3. 预计新增代发人数 (Renamed from estimatedPayroll)
+  estimatedLandingDate: string; // 4. 预计落地时间 (Renamed from landingDate)
   cardsIssued: number;      // 5. 已开卡人数
   cardSchedule: string;     // 6. 近期开卡排期 (ISO Date String)
   lastVisitDate: string;    // 7. 最近一次走访时间 (ISO Date String)
-  progressNotes: string;    // 8. 营销进度备注
-  updatedAt: string;        // 9. 数据更新时间
-  updatedByUserId: string;  // 10. 更新人员 ID
-  updatedByName: string;    // 10. 更新人员 Name
-  department: string;       // 11. 所属部门 (For Manager filtering)
-  line: LineType;           // 12. 所属条线 (For VP filtering)
-  status: RecordStatus;
-  history: RecordHistory[]; // 13. 修改历史
+  probability: number;      // 8. 落地概率 (0-100) - NEW
+  progressNotes: string;    // 9. 营销进度备注
+  updatedAt: string;        // 10. 数据更新时间
+  updatedByUserId: string;  // 11. 储备人员 ID
+  updatedByName: string;    // 11. 储备人员 Name
+  department: string;       // 12. 所在部门
+  line: LineType;           // 13. 所在条线
+  status: RecordStatus;     // 14. 营销进度
+  history: RecordHistory[]; // 15. 修改历史
 }
 
 // For Charting

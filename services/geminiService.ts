@@ -1,8 +1,7 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { PayrollRecord, LineType, RecordStatus } from '../types';
 
-// NOTE: In a real app, strict error handling for missing API keys is needed.
-// This assumes process.env.API_KEY is available as per instructions.
 const apiKey = process.env.API_KEY || ''; 
 const ai = new GoogleGenAI({ apiKey });
 
@@ -23,12 +22,12 @@ export const parseSmartInput = async (
     User Context: The user is ${userContext.name} from the ${userContext.line} line.
 
     Rules:
-    1. Extract 'companyName', 'totalEmployees', 'estimatedPayroll', 'landingDate', 'cardsIssued', 'cardSchedule', 'lastVisitDate', 'progressNotes'.
+    1. Extract 'companyName', 'totalEmployees', 'estimatedNewPayroll', 'estimatedLandingDate', 'cardsIssued', 'cardSchedule', 'lastVisitDate', 'progressNotes', 'probability'.
     2. Convert relative dates (e.g., "today", "next Friday") into ISO 8601 Date strings (YYYY-MM-DD).
     3. If 'cardsIssued' is not mentioned, default to 0.
-    4. If 'status' is implied (e.g., "finished", "done"), set it to COMPLETED, otherwise FOLLOWING.
-    5. 'progressNotes' should summarize the qualitative details.
-    6. 'line' should default to the user's line unless explicitly stated otherwise.
+    4. 'status' should be one of "跟进中", "已落地", "无法落地". Detect intent like "failed", "gave up" for "无法落地". Default to "跟进中".
+    5. 'probability' is a number from 0 to 100. If not explicitly stated, infer based on sentiment (e.g., "very likely" = 80, "uncertain" = 40). Default to 50.
+    6. 'line' should default to the user's line unless explicitly stated.
   `;
 
   try {
@@ -43,13 +42,14 @@ export const parseSmartInput = async (
           properties: {
             companyName: { type: Type.STRING },
             totalEmployees: { type: Type.NUMBER },
-            estimatedPayroll: { type: Type.NUMBER },
-            landingDate: { type: Type.STRING, description: "YYYY-MM-DD format" },
+            estimatedNewPayroll: { type: Type.NUMBER },
+            estimatedLandingDate: { type: Type.STRING, description: "YYYY-MM-DD format" },
             cardsIssued: { type: Type.NUMBER },
             cardSchedule: { type: Type.STRING, description: "YYYY-MM-DD format" },
             lastVisitDate: { type: Type.STRING, description: "YYYY-MM-DD format" },
+            probability: { type: Type.NUMBER, description: "0-100" },
             progressNotes: { type: Type.STRING },
-            status: { type: Type.STRING, enum: [RecordStatus.FOLLOWING, RecordStatus.COMPLETED, RecordStatus.PAUSED] },
+            status: { type: Type.STRING, enum: [RecordStatus.FOLLOWING, RecordStatus.COMPLETED, RecordStatus.FAILED] },
             line: { type: Type.STRING, enum: [LineType.COMPANY, LineType.RETAIL, LineType.PERSONAL] }
           },
           required: ["companyName", "progressNotes"]

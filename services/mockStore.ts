@@ -45,11 +45,12 @@ const MOCK_RECORDS: PayrollRecord[] = [
     id: 'r1',
     companyName: '象山海鲜加工厂',
     totalEmployees: 200,
-    estimatedPayroll: 180,
-    landingDate: new Date().toISOString(), // Landed this month
+    estimatedNewPayroll: 180,
+    estimatedLandingDate: new Date().toISOString(), // Landed this month
     cardsIssued: 150,
     cardSchedule: '2023-11-20',
     lastVisitDate: new Date().toISOString(), 
+    probability: 100,
     progressNotes: '已完成大部分开卡，剩余人员下周补录。',
     updatedAt: new Date().toISOString(),
     updatedByUserId: 's_r1',
@@ -63,11 +64,12 @@ const MOCK_RECORDS: PayrollRecord[] = [
     id: 'r2',
     companyName: '宁波东部科技园',
     totalEmployees: 500,
-    estimatedPayroll: 450,
-    landingDate: '2024-06-01', // Future
+    estimatedNewPayroll: 450,
+    estimatedLandingDate: '2024-06-01', // Future
     cardsIssued: 0,
     cardSchedule: '2023-11-25',
     lastVisitDate: '2023-10-20',
+    probability: 60,
     progressNotes: '高层已对接，等待协议签署。',
     updatedAt: '2023-10-20T10:00:00Z',
     updatedByUserId: 's_c1',
@@ -81,11 +83,12 @@ const MOCK_RECORDS: PayrollRecord[] = [
     id: 'r3',
     companyName: '豪车俱乐部',
     totalEmployees: 50,
-    estimatedPayroll: 50,
-    landingDate: '2024-01-10',
+    estimatedNewPayroll: 50,
+    estimatedLandingDate: '2023-10-10', // Past date, not completed (Overdue example)
     cardsIssued: 10,
     cardSchedule: '2023-12-05',
     lastVisitDate: '2023-11-01',
+    probability: 30,
     progressNotes: '私银客户转介，重点跟进高管。',
     updatedAt: '2023-11-01T14:30:00Z',
     updatedByUserId: 's_p3',
@@ -99,11 +102,12 @@ const MOCK_RECORDS: PayrollRecord[] = [
     id: 'r4',
     companyName: '象山渔业总公司',
     totalEmployees: 1000,
-    estimatedPayroll: 900,
-    landingDate: new Date().toISOString(), // Landed this month
+    estimatedNewPayroll: 900,
+    estimatedLandingDate: new Date().toISOString(), // Landed this month
     cardsIssued: 200,
     cardSchedule: '2023-11-25',
     lastVisitDate: '2023-11-10',
+    probability: 90,
     progressNotes: '首批款项已发，二批卡下周开。',
     updatedAt: new Date().toISOString(),
     updatedByUserId: 's_c1',
@@ -112,12 +116,31 @@ const MOCK_RECORDS: PayrollRecord[] = [
     line: LineType.COMPANY,
     status: RecordStatus.COMPLETED,
     history: []
+  },
+  {
+    id: 'r5',
+    companyName: '陈旧企业示例',
+    totalEmployees: 300,
+    estimatedNewPayroll: 100,
+    estimatedLandingDate: '2024-12-01',
+    cardsIssued: 0,
+    cardSchedule: '',
+    lastVisitDate: '2023-01-01', // Very old visit date
+    probability: 20,
+    progressNotes: '很久没去了',
+    updatedAt: '2023-01-01T00:00:00Z',
+    updatedByUserId: 's_c1',
+    updatedByName: '小刘',
+    department: '公司业务一部',
+    line: LineType.COMPANY,
+    status: RecordStatus.FOLLOWING,
+    history: []
   }
 ];
 
-const USERS_KEY = 'app_users_v2';
-const RECORDS_KEY = 'app_records_v2';
-const CURRENT_USER_KEY = 'app_current_user_v2';
+const USERS_KEY = 'app_users_v3';
+const RECORDS_KEY = 'app_records_v3';
+const CURRENT_USER_KEY = 'app_current_user_v3';
 
 export const mockStore = {
   init: () => {
@@ -208,14 +231,32 @@ export const mockStore = {
 
   addRecord: (record: PayrollRecord) => {
     const allRecords: PayrollRecord[] = JSON.parse(localStorage.getItem(RECORDS_KEY) || '[]');
-    // Init history
-    record.history = [{
-      date: new Date().toISOString(),
-      updatedByName: record.updatedByName,
-      changeSummary: '创建记录'
-    }];
+    // Init history if not present
+    if (!record.history) {
+        record.history = [{
+          date: new Date().toISOString(),
+          updatedByName: record.updatedByName,
+          changeSummary: '创建记录'
+        }];
+    }
     allRecords.push(record);
     localStorage.setItem(RECORDS_KEY, JSON.stringify(allRecords));
+  },
+
+  // Bulk Import
+  batchAddRecords: (records: PayrollRecord[]) => {
+      const allRecords: PayrollRecord[] = JSON.parse(localStorage.getItem(RECORDS_KEY) || '[]');
+      // Add initial history for batch items
+      const preparedRecords = records.map(r => ({
+          ...r,
+          history: [{
+              date: new Date().toISOString(),
+              updatedByName: r.updatedByName,
+              changeSummary: '批量导入'
+          }]
+      }));
+      const newAllRecords = [...allRecords, ...preparedRecords];
+      localStorage.setItem(RECORDS_KEY, JSON.stringify(newAllRecords));
   },
 
   updateRecordWithHistory: (newRecordData: PayrollRecord, user: User) => {
@@ -226,14 +267,17 @@ export const mockStore = {
       const oldRecord = allRecords[index];
       const changes: string[] = [];
 
-      if (oldRecord.estimatedPayroll !== newRecordData.estimatedPayroll) {
-        changes.push(`代发人数: ${oldRecord.estimatedPayroll} -> ${newRecordData.estimatedPayroll}`);
+      if (oldRecord.estimatedNewPayroll !== newRecordData.estimatedNewPayroll) {
+        changes.push(`预计新增代发: ${oldRecord.estimatedNewPayroll} -> ${newRecordData.estimatedNewPayroll}`);
       }
       if (oldRecord.cardsIssued !== newRecordData.cardsIssued) {
-        changes.push(`开卡人数: ${oldRecord.cardsIssued} -> ${newRecordData.cardsIssued}`);
+        changes.push(`已开卡: ${oldRecord.cardsIssued} -> ${newRecordData.cardsIssued}`);
       }
-      if (oldRecord.landingDate !== newRecordData.landingDate) {
-        changes.push(`落地时间变更`);
+      if (oldRecord.estimatedLandingDate !== newRecordData.estimatedLandingDate) {
+        changes.push(`预计落地时间变更`);
+      }
+      if (oldRecord.probability !== newRecordData.probability) {
+        changes.push(`落地概率: ${oldRecord.probability}% -> ${newRecordData.probability}%`);
       }
       if (oldRecord.progressNotes !== newRecordData.progressNotes) {
         changes.push(`更新备注`);

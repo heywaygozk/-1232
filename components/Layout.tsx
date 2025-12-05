@@ -23,17 +23,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, curren
       navItems.push({ id: 'users', label: '用户管理 / Admin', icon: <Users size={20} /> });
   }
 
-  // Stats for Management
-  if (
-    user.role === Role.ADMIN || 
-    user.role === Role.BRANCH_PRESIDENT || 
-    user.role === Role.VP_CORPORATE || 
-    user.role === Role.VP_RETAIL || 
-    user.role === Role.VP_PERSONAL ||
-    user.role === Role.DEPARTMENT_MANAGER
-  ) {
-    navItems.push({ id: 'stats', label: '统计报表 / Reports', icon: <PieChart size={20} /> });
-  }
+  // Stats for EVERYONE now, as requested
+  navItems.push({ id: 'stats', label: '统计报表 / Reports', icon: <PieChart size={20} /> });
 
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden">
