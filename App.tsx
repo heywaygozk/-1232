@@ -5,7 +5,7 @@ import { SmartInput } from './components/SmartInput';
 import { RecordList } from './components/RecordList';
 import { AdminDashboard } from './components/AdminDashboard';
 import { UserManagement } from './components/UserManagement';
-import { StatsReport } from './components/StatsReport'; // Import new component
+import { StatsReport } from './components/StatsReport'; 
 import { mockStore } from './services/mockStore';
 import { User, PayrollRecord, Role } from './types';
 import { ShieldCheck } from 'lucide-react';
@@ -146,7 +146,7 @@ export default function App() {
         <AdminDashboard records={records} allUsers={allUsers} currentUser={user} />
       )}
       
-      {currentTab === 'records' && <RecordList records={records} />}
+      {currentTab === 'records' && <RecordList records={records} currentUser={user} />}
       
       {currentTab === 'input' && <SmartInput user={user} onSave={handleSaveRecord} />}
       

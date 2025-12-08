@@ -2,12 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import { User, Role, LineType, DEPARTMENTS } from '../types';
 import { mockStore } from '../services/mockStore';
-import { Edit2, Trash2, Plus, Save, X } from 'lucide-react';
+import { Edit2, Trash2, Plus, Save, X, Upload, Download, Settings } from 'lucide-react';
 
 export const UserManagement: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<User>>({});
+  const [csvEncoding, setCsvEncoding] = useState('GBK');
 
   useEffect(() => {
     setUsers(mockStore.getUsers());
@@ -57,24 +58,118 @@ export const UserManagement: React.FC = () => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  // Helper to get available departments based on selected line
-  const availableDepartments = formData.line ? DEPARTMENTS[formData.line] : [];
+  // --- Import Logic ---
+  const handleDownloadTemplate = () => {
+    const headers = ["工号", "姓名", "密码(默认123)", "岗位名称", "角色(英文)", "条线(公司/零售/个人)", "部门", "年度指标"];
+    const csvContent = headers.join(",") + "\n" + "C888,张三,123,客户经理,STAFF,公司,公司业务一部,1000";
+    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "用户导入模板.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+     const file = e.target.files?.[0];
+     if (!file) return;
+     const reader = new FileReader();
+     reader.onload = (evt) => {
+         const text = evt.target?.result as string;
+         parseAndImportUsers(text);
+     };
+     reader.readAsText(file, csvEncoding);
+     // Clear input
+     e.target.value = '';
+  };
+
+  const parseAndImportUsers = (text: string) => {
+      try {
+          const lines = text.split('\n').filter(l => l.trim());
+          const newUsers: User[] = [];
+          
+          for (let i = 1; i < lines.length; i++) {
+              const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+              if (cols.length < 2) continue;
+
+              // Basic validation/parsing
+              const roleStr = cols[4] as string;
+              // Simple validation for Role enum
+              const role = Object.values(Role).includes(roleStr as Role) ? (roleStr as Role) : Role.STAFF;
+              
+              const lineStr = cols[5] as string;
+              const line = Object.values(LineType).includes(lineStr as LineType) ? (lineStr as LineType) : LineType.COMPANY;
+
+              newUsers.push({
+                  id: crypto.randomUUID(),
+                  employeeId: cols[0],
+                  name: cols[1],
+                  password: cols[2] || '123',
+                  title: cols[3] || '员工',
+                  role: role,
+                  line: line,
+                  department: cols[6] || '',
+                  yearlyTarget: parseInt(cols[7]) || 0
+              });
+          }
+
+          if (newUsers.length > 0) {
+              mockStore.batchAddUsers(newUsers);
+              setUsers(mockStore.getUsers());
+              alert(`成功导入 ${newUsers.length} 名用户`);
+          }
+      } catch (err) {
+          alert('导入失败，请检查CSV格式');
+      }
+  };
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-      <div className="p-6 border-b border-slate-200 flex justify-between items-center">
+      <div className="p-6 border-b border-slate-200 flex flex-wrap gap-4 justify-between items-center">
         <div>
           <h2 className="text-lg font-bold text-slate-800">用户与权限管理</h2>
           <p className="text-sm text-slate-500">管理系统用户、角色、部门及考核指标</p>
         </div>
-        <button 
-          onClick={handleCreate}
-          disabled={!!editingId}
-          className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50"
-        >
-          <Plus size={16} />
-          新增用户
-        </button>
+        <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-slate-100 rounded px-2 py-1 mr-2">
+                <Settings size={12} className="text-slate-400"/>
+                <select 
+                    value={csvEncoding}
+                    onChange={e => setCsvEncoding(e.target.value)}
+                    className="bg-transparent text-xs border-none focus:ring-0 text-slate-600"
+                >
+                    <option value="GBK">GBK</option>
+                    <option value="UTF-8">UTF-8</option>
+                </select>
+            </div>
+            <button 
+                onClick={handleDownloadTemplate}
+                className="bg-slate-100 text-slate-600 px-3 py-2 rounded flex items-center gap-2 hover:bg-slate-200 text-sm"
+            >
+                <Download size={16} /> 模板
+            </button>
+            <div className="relative overflow-hidden">
+                <button className="bg-green-600 text-white px-3 py-2 rounded flex items-center gap-2 hover:bg-green-700 text-sm">
+                    <Upload size={16} /> 导入
+                </button>
+                <input 
+                    type="file" 
+                    accept=".csv" 
+                    onChange={handleFileUpload} 
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                />
+            </div>
+            <button 
+            onClick={handleCreate}
+            disabled={!!editingId}
+            className="bg-blue-600 text-white px-3 py-2 rounded flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50 text-sm"
+            >
+            <Plus size={16} />
+            新增
+            </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -160,7 +255,6 @@ const UserRow: React.FC<{
           {formData.line && DEPARTMENTS[formData.line as LineType] && (
             <select className="w-full p-1 border rounded block" value={formData.department} onChange={e => onChange('department', e.target.value)}>
               {DEPARTMENTS[formData.line as LineType].map(d => <option key={d} value={d}>{d}</option>)}
-              {/* Fallback for admin departments like '科技部' */}
               {!DEPARTMENTS[formData.line as LineType].includes(formData.department!) && <option value={formData.department}>{formData.department}</option>}
             </select>
           )}

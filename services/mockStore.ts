@@ -172,6 +172,12 @@ export const mockStore = {
     const filtered = users.filter((u: User) => u.id !== userId);
     localStorage.setItem(USERS_KEY, JSON.stringify(filtered));
   },
+  
+  batchAddUsers: (newUsers: User[]) => {
+    const users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
+    const updatedUsers = [...users, ...newUsers];
+    localStorage.setItem(USERS_KEY, JSON.stringify(updatedUsers));
+  },
 
   getCurrentUser: (): User | null => {
     const stored = localStorage.getItem(CURRENT_USER_KEY);
@@ -241,6 +247,12 @@ export const mockStore = {
     }
     allRecords.push(record);
     localStorage.setItem(RECORDS_KEY, JSON.stringify(allRecords));
+  },
+
+  deleteRecord: (recordId: string) => {
+    const allRecords: PayrollRecord[] = JSON.parse(localStorage.getItem(RECORDS_KEY) || '[]');
+    const filtered = allRecords.filter(r => r.id !== recordId);
+    localStorage.setItem(RECORDS_KEY, JSON.stringify(filtered));
   },
 
   // Bulk Import

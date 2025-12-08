@@ -2,7 +2,7 @@
 import React, { useMemo, useState } from 'react';
 import { PayrollRecord, User, RecordStatus, Role, LineType } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ReTooltip } from 'recharts';
-import { AlertTriangle, TrendingUp, Calendar, Target, Award, Briefcase, Clock, ChevronDown, ChevronUp, Flag } from 'lucide-react';
+import { AlertTriangle, TrendingUp, Calendar, Target, Award, Briefcase, Clock, ChevronDown, ChevronUp, Flag, Calculator } from 'lucide-react';
 
 interface AdminDashboardProps {
   records: PayrollRecord[];
@@ -15,8 +15,6 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ records, allUsers, currentUser }) => {
   const [showAllOverdue, setShowAllOverdue] = useState(false);
   const [showAllStale, setShowAllStale] = useState(false);
-  
-  // Stale Projects Sorting
   const [staleSortBy, setStaleSortBy] = useState<'employees' | 'days'>('days');
 
   // --- Aggregation Logic (The Drill-down) ---
@@ -34,20 +32,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ records, allUser
         .sort((a, b) => b.value - a.value);
     };
 
-    charts.push({ title: '各企业储备占比', data: groupBy('companyName') });
+    // Requirement: Admin, Branch President, VPs should NOT see the Company Share chart.
+    const isUpperManagement = [
+        Role.ADMIN, 
+        Role.BRANCH_PRESIDENT, 
+        Role.VP_CORPORATE, 
+        Role.VP_RETAIL, 
+        Role.VP_PERSONAL
+    ].includes(currentUser.role);
 
+    // Only show Company breakdown if NOT upper management (i.e., Staff or Dept Managers)
+    if (!isUpperManagement) {
+        charts.push({ title: '各企业储备占比', data: groupBy('companyName') });
+    }
+
+    // Everyone except Staff sees Personnel breakdown
     if (currentUser.role !== Role.STAFF) {
       charts.push({ title: '各人员储备占比', data: groupBy('updatedByName') });
     }
 
-    if (currentUser.role === Role.VP_CORPORATE || currentUser.role === Role.VP_RETAIL || currentUser.role === Role.VP_PERSONAL || currentUser.role === Role.BRANCH_PRESIDENT || currentUser.role === Role.ADMIN) {
+    // Upper management sees Dept breakdown
+    if (isUpperManagement || currentUser.role === Role.DEPARTMENT_MANAGER) {
        charts.push({ title: '各部门/网点储备占比', data: groupBy('department') });
     }
 
+    // Only President and Admin see Line breakdown
     if (currentUser.role === Role.BRANCH_PRESIDENT || currentUser.role === Role.ADMIN) {
        charts.push({ title: '各条线储备占比', data: groupBy('line') });
     }
 
+    // Reverse so higher level aggregation (Line/Dept) comes first visually
     return charts.reverse();
 
   }, [records, currentUser.role]);
@@ -55,54 +69,62 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ records, allUser
   // --- KPI Metrics ---
   const metrics = useMemo(() => {
     const now = new Date();
-    // Reset to start of day for comparison
     now.setHours(0,0,0,0);
     
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
     
-    // Calculate Week Range (Mon - Fri)
+    // Calculate Week Range (Mon - Sun)
     const dayOfWeek = now.getDay(); // 0 (Sun) - 6 (Sat)
-    const diffToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    // Distance to previous Monday. If Sun (0), dist is 6. If Mon (1), dist is 0.
+    const distToMon = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    
     const monday = new Date(now);
-    monday.setDate(now.getDate() + diffToMon);
-    const friday = new Date(monday);
-    friday.setDate(monday.getDate() + 4);
+    monday.setDate(now.getDate() - distToMon);
+    monday.setHours(0,0,0,0);
+    
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23,59,59,999);
 
-    let monthPendingCount = 0; // 本月待落地
-    let weekUpcomingCount = 0; // 本周即将落地
-    let overdueCount = 0;      // 逾期数
-    let overduePayroll = 0;    // 逾期人数
+    let monthPendingCount = 0;
+    let weekUpcomingCount = 0;
+    let overdueCount = 0;
+    let overduePayroll = 0;
     let overdueList: PayrollRecord[] = [];
-    let yearLandedCount = 0;   // 年度已落地
+    let yearLandedCount = 0;
+    let weightedMonthLanding = 0;
 
-    // Stale Projects (>30 days not visited)
     const thirtyDaysAgo = new Date(now);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     let staleList: { record: PayrollRecord, days: number }[] = [];
 
     records.forEach(r => {
-      const d = new Date(r.estimatedLandingDate);
-      d.setHours(0,0,0,0); 
+      const landingDate = new Date(r.estimatedLandingDate);
+      // Normalize landing date for comparison (start of day)
+      const landingDateStart = new Date(landingDate);
+      landingDateStart.setHours(0,0,0,0);
 
       const lastVisit = new Date(r.lastVisitDate);
       lastVisit.setHours(0,0,0,0);
       
-      const isThisMonth = d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-      const isThisYear = d.getFullYear() === currentYear;
+      const isThisMonth = landingDate.getMonth() === currentMonth && landingDate.getFullYear() === currentYear;
+      const isThisYear = landingDate.getFullYear() === currentYear;
 
-      // 1. Month Pending (Following + This Month)
+      // 1. Month Pending: Status FOLLOWING + Landing Date in Current Month
       if (r.status === RecordStatus.FOLLOWING && isThisMonth) {
         monthPendingCount += r.estimatedNewPayroll;
+        // Weighted logic
+        weightedMonthLanding += Math.round(r.estimatedNewPayroll * (r.probability / 100));
       }
 
-      // 2. Week Upcoming (Following + Within Mon-Fri range)
-      if (r.status === RecordStatus.FOLLOWING && d >= monday && d <= friday) {
+      // 2. Week Upcoming: Status FOLLOWING + Landing Date within Mon-Sun window
+      if (r.status === RecordStatus.FOLLOWING && landingDateStart >= monday && landingDateStart <= sunday) {
         weekUpcomingCount += r.estimatedNewPayroll;
       }
 
-      // 3. Overdue (Following + Date < Today)
-      if (r.status === RecordStatus.FOLLOWING && d < now) {
+      // 3. Overdue: Status FOLLOWING + Landing Date < Today
+      if (r.status === RecordStatus.FOLLOWING && landingDateStart < now) {
         overdueCount++;
         overduePayroll += r.estimatedNewPayroll;
         overdueList.push(r);
@@ -110,7 +132,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ records, allUser
 
       // 4. Yearly Landed
       if (r.status === RecordStatus.COMPLETED && isThisYear) {
-          yearLandedCount += r.estimatedNewPayroll; // Use new payroll instead of total employees
+          yearLandedCount += r.estimatedNewPayroll;
       }
 
       // 5. Stale (> 30 Days)
@@ -148,11 +170,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ records, allUser
       yearlyTarget,
       yearLandedCount,
       completionRate,
-      staleList
+      staleList,
+      weightedMonthLanding
     };
   }, [records, currentUser, allUsers]);
 
-  // Sorted Stale List
   const sortedStaleList = useMemo(() => {
       const list = [...metrics.staleList];
       if (staleSortBy === 'employees') {
@@ -198,14 +220,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ records, allUser
           <div className="flex items-baseline gap-2 mb-2">
             <h3 className="text-3xl font-bold text-slate-900">{metrics.monthPendingCount}</h3>
           </div>
-          <p className="text-xs text-slate-400">当前跟进中且计划本月落地的总人数</p>
+          <p className="text-xs text-slate-400">本月内预计落地且跟进中</p>
+        </div>
+
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+           <div className="absolute top-0 right-0 p-3 opacity-10"><Calculator size={64} className="text-indigo-600" /></div>
+          <p className="text-sm font-medium text-slate-500 mb-1">本月加权预计落地</p>
+          <h3 className="text-3xl font-bold text-indigo-600 mb-2">{metrics.weightedMonthLanding}</h3>
+          <p className="text-xs text-slate-400">∑(预计代发 × 落地概率)</p>
         </div>
 
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
            <div className="absolute top-0 right-0 p-3 opacity-10"><Clock size={64} className="text-green-600" /></div>
           <p className="text-sm font-medium text-slate-500 mb-1">本周即将落地 (人)</p>
           <h3 className="text-3xl font-bold text-slate-900 mb-2">{metrics.weekUpcomingCount}</h3>
-          <p className="text-xs text-slate-400">周一至周五计划落地人数</p>
+          <p className="text-xs text-slate-400">周一至周日计划落地人数</p>
         </div>
 
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
@@ -215,19 +244,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ records, allUser
             <h3 className="text-3xl font-bold text-red-600">{metrics.overdueCount}</h3>
             <span className="text-sm text-red-400">({metrics.overduePayroll}人)</span>
           </div>
-          <p className="text-xs text-slate-400 mt-1">已过预计时间仍未完成</p>
-        </div>
-
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-           <div className="flex items-center gap-4 h-full">
-            <div className="p-3 bg-purple-100 text-purple-600 rounded-lg"><Briefcase size={24} /></div>
-            <div>
-              <p className="text-sm text-slate-500">总储备池规模</p>
-              <h3 className="text-2xl font-bold text-slate-900">
-                {records.reduce((acc, r) => acc + r.estimatedNewPayroll, 0).toLocaleString()}
-              </h3>
-            </div>
-          </div>
+          <p className="text-xs text-slate-400 mt-1">预计时间小于今日且未完成</p>
         </div>
       </div>
 
@@ -240,39 +257,44 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ records, allUser
                 储备结构分析 (Drill-down)
             </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {breakdownCharts.map((chart, idx) => (
-                    <div key={idx} className="h-72 border border-slate-100 rounded-lg p-2 bg-slate-50/50 flex flex-col">
-                        <p className="text-xs text-center font-medium text-slate-500 mb-2">{chart.title}</p>
-                        <div className="flex-1 min-h-0">
-                          <ResponsiveContainer width="100%" height="100%">
-                              <PieChart>
-                                  <Pie
-                                      data={chart.data}
-                                      cx="50%"
-                                      cy="50%"
-                                      innerRadius={40}
-                                      outerRadius={65}
-                                      paddingAngle={2}
-                                      dataKey="value"
-                                      label={({name, percent}) => {
-                                         // Shorten long names
-                                         const shortName = name.length > 5 ? name.substring(0, 4) + '..' : name;
-                                         return `${shortName} ${(percent * 100).toFixed(0)}%`;
-                                      }}
-                                      labelLine={true}
-                                  >
-                                      {chart.data.map((entry, index) => (
-                                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                      ))}
-                                  </Pie>
-                                  <ReTooltip />
-                              </PieChart>
-                          </ResponsiveContainer>
+            {breakdownCharts.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {breakdownCharts.map((chart, idx) => (
+                        <div key={idx} className="h-72 border border-slate-100 rounded-lg p-2 bg-slate-50/50 flex flex-col">
+                            <p className="text-xs text-center font-medium text-slate-500 mb-2">{chart.title}</p>
+                            <div className="flex-1 min-h-0">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={chart.data}
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius={40}
+                                        outerRadius={65}
+                                        paddingAngle={2}
+                                        dataKey="value"
+                                        label={({name, percent}) => {
+                                            const shortName = name.length > 5 ? name.substring(0, 4) + '..' : name;
+                                            return `${shortName} ${(percent * 100).toFixed(0)}%`;
+                                        }}
+                                        labelLine={true}
+                                    >
+                                        {chart.data.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                        ))}
+                                    </Pie>
+                                    <ReTooltip />
+                                </PieChart>
+                            </ResponsiveContainer>
+                            </div>
                         </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="h-72 flex items-center justify-center text-slate-400 text-sm">
+                    无需展示下钻图表 (已是最高层级)
+                </div>
+            )}
         </div>
 
         {/* Right Column: Overdue & Stale */}
@@ -306,6 +328,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ records, allUser
                             {showAllOverdue ? '收起' : `查看更多 (${metrics.overdueList.length - 3})`}
                         </button>
                     )}
+                    {metrics.overdueList.length === 0 && <p className="text-xs text-slate-400 text-center py-4">无逾期项目</p>}
                 </div>
             </div>
 
