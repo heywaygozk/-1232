@@ -6,6 +6,7 @@ import { RecordList } from './components/RecordList';
 import { AdminDashboard } from './components/AdminDashboard';
 import { UserManagement } from './components/UserManagement';
 import { StatsReport } from './components/StatsReport'; 
+import { SystemSettings } from './components/SystemSettings';
 import { mockStore } from './services/mockStore';
 import { User, PayrollRecord, Role } from './types';
 import { ShieldCheck } from 'lucide-react';
@@ -23,16 +24,28 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
 
   useEffect(() => {
-    mockStore.init();
-    const currentUser = mockStore.getCurrentUser();
-    const usersList = mockStore.getUsers();
-    setAllUsers(usersList);
+    const initApp = async () => {
+        mockStore.init();
+        const currentUser = mockStore.getCurrentUser();
+        
+        // Try initial sync if config exists
+        const cloudConfig = mockStore.getCloudConfig();
+        if (cloudConfig && cloudConfig.enabled) {
+            console.log("Attempting initial cloud sync...");
+            await mockStore.syncWithCloud();
+        }
+
+        const usersList = mockStore.getUsers();
+        setAllUsers(usersList);
+        
+        if (currentUser) {
+          setUser(currentUser);
+          refreshData(currentUser);
+        }
+        setLoading(false);
+    };
     
-    if (currentUser) {
-      setUser(currentUser);
-      refreshData(currentUser);
-    }
-    setLoading(false);
+    initApp();
   }, []);
 
   const refreshData = (currentUser: User) => {
@@ -135,6 +148,7 @@ export default function App() {
             {currentTab === 'input' && '智能录入 / Smart Input'}
             {currentTab === 'stats' && '统计报表 / Reports'}
             {currentTab === 'users' && '用户管理 / Admin'}
+            {currentTab === 'settings' && '系统设置 / Settings'}
           </h2>
           <p className="text-slate-500 text-sm">
             {new Date().toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
@@ -156,6 +170,10 @@ export default function App() {
 
       {currentTab === 'users' && user.role === Role.ADMIN && (
           <UserManagement />
+      )}
+
+      {currentTab === 'settings' && (
+          <SystemSettings />
       )}
 
     </Layout>

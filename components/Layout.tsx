@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { User, Role } from '../types';
-import { LogOut, LayoutDashboard, Database, PlusCircle, PieChart, Users } from 'lucide-react';
+import { LogOut, LayoutDashboard, Database, PlusCircle, PieChart, Users, Settings } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -25,6 +25,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, curren
 
   // Stats for EVERYONE now, as requested
   navItems.push({ id: 'stats', label: '统计报表 / Reports', icon: <PieChart size={20} /> });
+
+  // System Settings (Cloud Sync) - Available to everyone so they can config their device
+  navItems.push({ id: 'settings', label: '系统设置 / Settings', icon: <Settings size={20} /> });
 
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden">

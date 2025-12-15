@@ -28,6 +28,12 @@ export enum RecordStatus {
   FAILED = '无法落地', // Replaced PAUSED
 }
 
+export interface CloudConfig {
+  enabled: boolean;
+  apiKey: string; // JSONBin Master Key or Access Key
+  binId: string;  // JSONBin Bin ID
+}
+
 export interface User {
   id: string;
   employeeId: string; // 工号
