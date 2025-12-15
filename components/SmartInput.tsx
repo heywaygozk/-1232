@@ -106,8 +106,13 @@ export const SmartInput: React.FC<SmartInputProps> = ({ user, onSave }) => {
 
   // --- Batch Import Logic ---
   const handleDownloadTemplate = () => {
-      const headers = ["企业名称", "企业总人数", "预计新增代发人数", "预计落地时间(YYYY-MM-DD)", "已开卡人数", "落地概率(0-100)", "最新走访日期(YYYY-MM-DD)", "进度备注"];
-      const csvContent = headers.join(",") + "\n" + "示例企业,100,50,2024-01-01,0,80,2023-11-15,初次拜访有意向";
+      // Updated headers to include Ownership info
+      const headers = [
+          "企业名称", "企业总人数", "预计新增代发人数", "预计落地时间(YYYY-MM-DD)", 
+          "已开卡人数", "落地概率(0-100)", "最新走访日期(YYYY-MM-DD)", "进度备注",
+          "业务人员姓名", "所在部门", "所在条线(公司/零售/个人)"
+      ];
+      const csvContent = headers.join(",") + "\n" + "示例企业,100,50,2024-01-01,0,80,2023-11-15,初次拜访有意向,张三,公司业务一部,公司";
       const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -148,13 +153,31 @@ export const SmartInput: React.FC<SmartInputProps> = ({ user, onSave }) => {
       try {
           const lines = text.split('\n').filter(l => l.trim());
           const records: PayrollRecord[] = [];
+          const allSystemUsers = mockStore.getUsers(); // Get all users to map names to IDs
           
           // Skip header row (index 0)
           for (let i = 1; i < lines.length; i++) {
-              // Handle CSV quote parsing simply (not robust for commas in values, but sufficient for simple template)
-              // For robustness, consider a CSV parser library, but here we split by comma
+              // Handle CSV quote parsing simply
               const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
               if (cols.length < 2) continue;
+
+              // Parse new fields (indices 8, 9, 10)
+              const importedName = cols[8] && cols[8].trim() ? cols[8].trim() : user.name;
+              const importedDept = cols[9] && cols[9].trim() ? cols[9].trim() : user.department;
+              
+              // Map Chinese Line string to Enum, fallback to current user's line
+              let importedLine = user.line;
+              const lineStr = cols[10];
+              if (lineStr) {
+                  if (lineStr.includes('公司')) importedLine = LineType.COMPANY;
+                  else if (lineStr.includes('零售')) importedLine = LineType.RETAIL;
+                  else if (lineStr.includes('个人') || lineStr.includes('私银') || lineStr.includes('财富')) importedLine = LineType.PERSONAL;
+              }
+
+              // Try to match the imported name to a real user ID in the system
+              // This ensures that when the "Sales Person" logs in, they see this record.
+              const matchedUser = allSystemUsers.find(u => u.name === importedName);
+              const targetUserId = matchedUser ? matchedUser.id : user.id;
 
               records.push({
                   id: crypto.randomUUID(),
@@ -166,12 +189,16 @@ export const SmartInput: React.FC<SmartInputProps> = ({ user, onSave }) => {
                   probability: parseInt(cols[5]) || 50,
                   lastVisitDate: cols[6] && !isNaN(Date.parse(cols[6])) ? new Date(cols[6]).toISOString() : '', // Allow empty
                   progressNotes: cols[7] || '批量导入',
+                  
+                  // Ownership fields
+                  updatedByName: importedName,
+                  department: importedDept,
+                  line: importedLine,
+                  updatedByUserId: targetUserId, 
+                  
+                  // Metadata
                   cardSchedule: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
-                  updatedByUserId: user.id,
-                  updatedByName: user.name,
-                  line: user.line,
-                  department: user.department,
                   status: RecordStatus.FOLLOWING,
                   history: []
               });
@@ -473,20 +500,22 @@ export const SmartInput: React.FC<SmartInputProps> = ({ user, onSave }) => {
                               <thead className="bg-slate-50 text-slate-500 font-medium">
                                   <tr>
                                       <th className="p-3">企业名称</th>
-                                      <th className="p-3">规模</th>
+                                      <th className="p-3">跟进人</th>
+                                      <th className="p-3">部门</th>
+                                      <th className="p-3">条线</th>
                                       <th className="p-3">预计新增</th>
                                       <th className="p-3">落地时间</th>
-                                      <th className="p-3">概率</th>
                                   </tr>
                               </thead>
                               <tbody className="divide-y">
                                   {importPreview.map((r, i) => (
                                       <tr key={i} className="hover:bg-slate-50">
-                                          <td className="p-3">{r.companyName}</td>
-                                          <td className="p-3">{r.totalEmployees}</td>
+                                          <td className="p-3 font-medium">{r.companyName}</td>
+                                          <td className="p-3">{r.updatedByName}</td>
+                                          <td className="p-3 text-xs">{r.department}</td>
+                                          <td className="p-3 text-xs">{r.line}</td>
                                           <td className="p-3">{r.estimatedNewPayroll}</td>
                                           <td className="p-3">{new Date(r.estimatedLandingDate).toLocaleDateString()}</td>
-                                          <td className="p-3">{r.probability}%</td>
                                       </tr>
                                   ))}
                               </tbody>
