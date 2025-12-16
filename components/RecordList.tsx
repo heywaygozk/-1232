@@ -131,7 +131,7 @@ export const RecordList: React.FC<RecordListProps> = ({ records, currentUser }) 
       {/* Toolbar */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 w-full md:w-auto no-scrollbar">
             <span className="text-sm font-bold text-slate-700 whitespace-nowrap">排序:</span>
             {[
               { key: 'estimatedNewPayroll', label: '新增人数' },
@@ -143,7 +143,7 @@ export const RecordList: React.FC<RecordListProps> = ({ records, currentUser }) 
               <button
                 key={item.key}
                 onClick={() => handleSort(item.key as SortField)}
-                className={`px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1 transition-colors ${
+                className={`px-3 py-1.5 rounded text-xs font-medium flex items-center gap-1 transition-colors whitespace-nowrap ${
                   sortField === item.key ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
@@ -152,16 +152,16 @@ export const RecordList: React.FC<RecordListProps> = ({ records, currentUser }) 
               </button>
             ))}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 w-full md:w-auto">
             <button 
                 onClick={handleExportCSV}
-                className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg transition-colors bg-green-50 text-green-700 hover:bg-green-100"
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 text-sm font-medium px-4 py-2 rounded-lg transition-colors bg-green-50 text-green-700 hover:bg-green-100"
             >
-                <Download size={16} /> 导出列表
+                <Download size={16} /> <span className="hidden md:inline">导出列表</span><span className="md:hidden">导出</span>
             </button>
             <button 
                 onClick={() => setShowFilters(!showFilters)}
-                className={`flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
+                className={`flex-1 md:flex-none flex items-center justify-center gap-2 text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
                 showFilters ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
             >
@@ -171,9 +171,9 @@ export const RecordList: React.FC<RecordListProps> = ({ records, currentUser }) 
         </div>
 
         {showFilters && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2 border-t border-slate-100 animate-fade-in">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-2 border-t border-slate-100 animate-fade-in">
              <select 
-               className="p-2 border rounded text-sm bg-slate-50" 
+               className="p-2 border rounded text-sm bg-slate-50 w-full" 
                value={filterLine} 
                onChange={e => {
                  setFilterLine(e.target.value);
@@ -184,13 +184,13 @@ export const RecordList: React.FC<RecordListProps> = ({ records, currentUser }) 
                {Object.values(LineType).map(l => <option key={l} value={l}>{l}</option>)}
              </select>
 
-             <select className="p-2 border rounded text-sm bg-slate-50" value={filterDept} onChange={e => setFilterDept(e.target.value)}>
+             <select className="p-2 border rounded text-sm bg-slate-50 w-full" value={filterDept} onChange={e => setFilterDept(e.target.value)}>
                <option value="">所有部门</option>
                {filterLine && DEPARTMENTS[filterLine as LineType]?.map(d => <option key={d} value={d}>{d}</option>)}
                {!filterLine && Object.values(DEPARTMENTS).flat().map(d => <option key={d} value={d}>{d}</option>)}
              </select>
 
-             <select className="p-2 border rounded text-sm bg-slate-50" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+             <select className="p-2 border rounded text-sm bg-slate-50 w-full" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                <option value="">所有进度</option>
                {Object.values(RecordStatus).map(s => <option key={s} value={s}>{s}</option>)}
              </select>
@@ -198,7 +198,7 @@ export const RecordList: React.FC<RecordListProps> = ({ records, currentUser }) 
              <input 
                type="text" 
                placeholder="搜索人员姓名" 
-               className="p-2 border rounded text-sm bg-slate-50"
+               className="p-2 border rounded text-sm bg-slate-50 w-full"
                value={filterPerson}
                onChange={e => setFilterPerson(e.target.value)}
              />
@@ -208,9 +208,29 @@ export const RecordList: React.FC<RecordListProps> = ({ records, currentUser }) 
 
       <div className="grid grid-cols-1 gap-4">
         {processedRecords.map((record) => (
-          <div key={record.id} className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow group relative">
-            {/* Action Buttons */}
-            <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+          <div key={record.id} className="bg-white rounded-xl p-4 md:p-5 shadow-sm border border-slate-200 hover:shadow-md transition-shadow group relative">
+            
+            {/* Action Buttons - Optimized for Mobile (Always visible row or accessible) */}
+            <div className="flex justify-between items-start mb-3 md:hidden border-b border-slate-50 pb-2">
+                <span className="text-xs text-slate-400">ID: {record.id.slice(0,6)}</span>
+                <div className="flex gap-3">
+                     <button 
+                        onClick={() => setEditingRecord(record)}
+                        className="text-blue-600 flex items-center gap-1 text-xs"
+                      >
+                          <Edit size={14}/> 编辑
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(record.id)}
+                        className="text-red-600 flex items-center gap-1 text-xs"
+                      >
+                          <Trash2 size={14}/> 删除
+                      </button>
+                </div>
+            </div>
+
+            {/* Desktop Action Buttons (Hover) */}
+            <div className="hidden md:flex absolute top-4 right-4 gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                 <button 
                   onClick={() => setEditingRecord(record)}
                   className="p-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 border border-blue-100 shadow-sm" title="编辑"
@@ -227,41 +247,43 @@ export const RecordList: React.FC<RecordListProps> = ({ records, currentUser }) 
 
             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
               {/* Main Info */}
-              <div className="flex-1 pr-12">
-                <div className="flex items-center gap-3 mb-2 flex-wrap">
-                  <h3 className="text-lg font-bold text-slate-900">{record.companyName}</h3>
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium border ${
-                    record.status === RecordStatus.COMPLETED ? 'bg-green-100 text-green-700 border-green-200' :
-                    record.status === RecordStatus.FAILED ? 'bg-red-100 text-red-600 border-red-200' :
-                    'bg-blue-100 text-blue-700 border-blue-200'
-                  }`}>
-                    {record.status}
-                  </span>
-                  <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                     概率: <span className={`font-bold ${record.probability > 70 ? 'text-green-600' : record.probability < 40 ? 'text-red-500' : 'text-orange-500'}`}>{record.probability}%</span>
-                  </span>
+              <div className="flex-1 md:pr-12">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <h3 className="text-lg font-bold text-slate-900 leading-tight">{record.companyName}</h3>
+                  <div className="flex gap-2">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium border ${
+                        record.status === RecordStatus.COMPLETED ? 'bg-green-100 text-green-700 border-green-200' :
+                        record.status === RecordStatus.FAILED ? 'bg-red-100 text-red-600 border-red-200' :
+                        'bg-blue-100 text-blue-700 border-blue-200'
+                    }`}>
+                        {record.status}
+                    </span>
+                    <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                        概率: <span className={`font-bold ${record.probability > 70 ? 'text-green-600' : record.probability < 40 ? 'text-red-500' : 'text-orange-500'}`}>{record.probability}%</span>
+                    </span>
+                  </div>
                 </div>
                 
                 <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600 mb-3">
-                  <div className="flex items-center gap-1.5" title="储备人员">
-                    <Users size={16} className="text-slate-400" />
+                  <div className="flex items-center gap-1.5 w-full md:w-auto" title="储备人员">
+                    <Users size={16} className="text-slate-400 shrink-0" />
                     <span>{record.updatedByName} <span className="text-xs text-slate-400">({record.department})</span></span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <Building2 size={16} className="text-slate-400" />
-                    <span>企业规模: <span className="font-semibold text-slate-900">{record.totalEmployees}</span> 人</span>
+                  <div className="flex items-center gap-1.5 w-[45%] md:w-auto">
+                    <Building2 size={16} className="text-slate-400 shrink-0" />
+                    <span>规模: <span className="font-semibold text-slate-900">{record.totalEmployees}</span></span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <CreditCard size={16} className="text-slate-400" />
-                    <span>预计新增: <span className="font-semibold text-slate-900">{record.estimatedNewPayroll}</span> 人</span>
+                  <div className="flex items-center gap-1.5 w-[45%] md:w-auto">
+                    <CreditCard size={16} className="text-slate-400 shrink-0" />
+                    <span>预计: <span className="font-semibold text-slate-900">{record.estimatedNewPayroll}</span></span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <Calendar size={16} className="text-slate-400" />
-                    <span>预计落地: {new Date(record.estimatedLandingDate).toLocaleDateString()}</span>
+                  <div className="flex items-center gap-1.5 w-full md:w-auto">
+                    <Calendar size={16} className="text-slate-400 shrink-0" />
+                    <span>落地: {new Date(record.estimatedLandingDate).toLocaleDateString()}</span>
                   </div>
-                   <div className="flex items-center gap-1.5">
-                    <Clock size={16} className="text-slate-400" />
-                    <span>最近走访: {formatVisitDate(record.lastVisitDate)}</span>
+                   <div className="flex items-center gap-1.5 w-full md:w-auto">
+                    <Clock size={16} className="text-slate-400 shrink-0" />
+                    <span>走访: {formatVisitDate(record.lastVisitDate)}</span>
                   </div>
                 </div>
 
@@ -272,14 +294,14 @@ export const RecordList: React.FC<RecordListProps> = ({ records, currentUser }) 
               </div>
 
               {/* Side Stats */}
-              <div className="flex flex-col items-end gap-3 min-w-[180px] border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6">
-                <div className="text-right w-full">
+              <div className="flex flex-row md:flex-col justify-between md:items-end gap-3 w-full md:min-w-[180px] md:w-auto border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6">
+                <div className="md:text-right flex-1">
                   <p className="text-xs text-slate-500 mb-1">已开卡进度</p>
-                  <div className="flex items-end justify-end gap-1">
+                  <div className="flex items-baseline md:justify-end gap-1">
                     <span className="text-2xl font-bold text-blue-600">{record.cardsIssued}</span>
                     <span className="text-sm text-slate-400 mb-1">/ {record.estimatedNewPayroll}</span>
                   </div>
-                  <div className="w-full bg-slate-200 h-1.5 rounded-full mt-1 overflow-hidden">
+                  <div className="w-full md:w-32 bg-slate-200 h-1.5 rounded-full mt-1 overflow-hidden ml-auto">
                     <div 
                       className="bg-blue-600 h-full rounded-full" 
                       style={{ width: `${Math.min(100, record.estimatedNewPayroll > 0 ? (record.cardsIssued / record.estimatedNewPayroll) * 100 : 0)}%` }}
@@ -289,7 +311,7 @@ export const RecordList: React.FC<RecordListProps> = ({ records, currentUser }) 
                 
                 <button 
                   onClick={() => toggleHistory(record.id)}
-                  className="flex items-center justify-end gap-1 text-blue-500 hover:text-blue-700 mt-1 transition-colors text-xs"
+                  className="flex items-center justify-end gap-1 text-blue-500 hover:text-blue-700 mt-1 transition-colors text-xs whitespace-nowrap"
                 >
                   {expandedId === record.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   {expandedId === record.id ? '收起历史' : '查看历史'}
@@ -306,7 +328,7 @@ export const RecordList: React.FC<RecordListProps> = ({ records, currentUser }) 
                 <div className="space-y-3 max-h-40 overflow-y-auto pr-2">
                   {record.history && record.history.length > 0 ? (
                     record.history.map((h, i) => (
-                      <div key={i} className="text-xs flex gap-3">
+                      <div key={i} className="text-xs flex gap-3 flex-col md:flex-row md:items-center">
                         <span className="text-slate-400 min-w-[80px]">
                           {new Date(h.date).toLocaleDateString()}
                         </span>
@@ -328,16 +350,16 @@ export const RecordList: React.FC<RecordListProps> = ({ records, currentUser }) 
 
       {/* Edit Modal */}
       {editingRecord && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                  <div className="p-6 border-b flex justify-between items-center">
+          <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl shadow-2xl w-full md:max-w-2xl max-h-[90vh] overflow-y-auto">
+                  <div className="p-4 md:p-6 border-b flex justify-between items-center sticky top-0 bg-white z-10">
                       <h3 className="text-xl font-bold text-slate-800">编辑储备记录</h3>
-                      <button onClick={() => setEditingRecord(null)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button>
+                      <button onClick={() => setEditingRecord(null)} className="text-slate-400 hover:text-slate-600 bg-slate-100 p-1 rounded-full"><X size={20}/></button>
                   </div>
-                  <form onSubmit={handleSaveEdit} className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <form onSubmit={handleSaveEdit} className="p-4 md:p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="md:col-span-2">
                           <label className="block text-sm font-medium text-slate-600 mb-1">企业名称</label>
-                          <input type="text" required className="w-full p-2 border rounded" value={editingRecord.companyName} onChange={e => updateEditField('companyName', e.target.value)} />
+                          <input type="text" required className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" value={editingRecord.companyName} onChange={e => updateEditField('companyName', e.target.value)} />
                       </div>
                       
                       {/* Ownership fields - Only Admin can edit */}
@@ -346,7 +368,7 @@ export const RecordList: React.FC<RecordListProps> = ({ records, currentUser }) 
                               {isAdmin ? <Edit size={12}/> : <ShieldCheck size={12}/>}
                               归属信息 {isAdmin ? '(管理员权限)' : '(仅管理员可修改)'}
                           </h4>
-                          <div className="grid grid-cols-3 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-600 mb-1">条线</label>
                                 <select 
@@ -420,9 +442,9 @@ export const RecordList: React.FC<RecordListProps> = ({ records, currentUser }) 
                           <textarea className="w-full p-2 border rounded" rows={3} value={editingRecord.progressNotes} onChange={e => updateEditField('progressNotes', e.target.value)} />
                       </div>
 
-                      <div className="md:col-span-2 flex justify-end gap-3 pt-4 border-t mt-2">
-                          <button type="button" onClick={() => setEditingRecord(null)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded">取消</button>
-                          <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"><Save size={18}/> 保存变更</button>
+                      <div className="md:col-span-2 flex justify-end gap-3 pt-4 border-t mt-2 pb-safe-area-bottom">
+                          <button type="button" onClick={() => setEditingRecord(null)} className="flex-1 md:flex-none px-4 py-3 md:py-2 text-slate-600 hover:bg-slate-100 rounded bg-slate-50 md:bg-transparent">取消</button>
+                          <button type="submit" className="flex-1 md:flex-none px-6 py-3 md:py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center justify-center gap-2"><Save size={18}/> 保存变更</button>
                       </div>
                   </form>
               </div>

@@ -13,26 +13,27 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, currentTab, onTabChange }) => {
   const navItems = [
-    { id: 'dashboard', label: '工作台 / Dashboard', icon: <LayoutDashboard size={20} /> },
-    { id: 'records', label: '储备列表 / Records', icon: <Database size={20} /> },
-    { id: 'input', label: '智能录入 / Smart Input', icon: <PlusCircle size={20} /> },
+    { id: 'dashboard', label: '工作台', fullLabel: '工作台 / Dashboard', icon: <LayoutDashboard size={20} /> },
+    { id: 'records', label: '列表', fullLabel: '储备列表 / Records', icon: <Database size={20} /> },
+    { id: 'input', label: '录入', fullLabel: '智能录入 / Smart Input', icon: <PlusCircle size={20} /> },
   ];
 
   // Admin User Management
   if (user.role === Role.ADMIN) {
-      navItems.push({ id: 'users', label: '用户管理 / Admin', icon: <Users size={20} /> });
+      navItems.push({ id: 'users', label: '用户', fullLabel: '用户管理 / Admin', icon: <Users size={20} /> });
   }
 
   // Stats for EVERYONE now, as requested
-  navItems.push({ id: 'stats', label: '统计报表 / Reports', icon: <PieChart size={20} /> });
+  navItems.push({ id: 'stats', label: '报表', fullLabel: '统计报表 / Reports', icon: <PieChart size={20} /> });
 
   // System Settings (Cloud Sync) - Available to everyone so they can config their device
-  navItems.push({ id: 'settings', label: '系统设置 / Settings', icon: <Settings size={20} /> });
+  navItems.push({ id: 'settings', label: '设置', fullLabel: '系统设置 / Settings', icon: <Settings size={20} /> });
 
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-64 bg-slate-900 text-white flex flex-col shadow-lg">
+      
+      {/* Desktop Sidebar - Hidden on Mobile */}
+      <aside className="hidden md:flex w-64 bg-slate-900 text-white flex-col shadow-lg">
         <div className="p-6 border-b border-slate-700">
           <h1 className="text-xl font-bold tracking-tight text-blue-400">象山支行</h1>
           <p className="text-xs text-slate-400 mt-1">代发储备智能追踪系统</p>
@@ -66,7 +67,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, curren
               }`}
             >
               {item.icon}
-              {item.label}
+              {item.fullLabel}
             </button>
           ))}
         </nav>
@@ -82,12 +83,48 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, curren
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto relative">
-        <div className="max-w-7xl mx-auto p-4 md:p-8">
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-auto relative w-full">
+        {/* Mobile Header (Top Bar) */}
+        <div className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center sticky top-0 z-20 shadow-md">
+            <div>
+               <h1 className="font-bold text-lg">象山支行</h1>
+               <p className="text-xs text-slate-400">{user.name} - {user.title}</p>
+            </div>
+            <button onClick={onLogout} className="p-2 text-slate-400 hover:text-white">
+                <LogOut size={18} />
+            </button>
+        </div>
+
+        <div className="max-w-7xl mx-auto p-4 md:p-8 pb-24 md:pb-8">
           {children}
         </div>
       </main>
+
+      {/* Mobile Bottom Navigation - Visible only on Mobile */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-lg z-50 px-2 pb-safe-area-bottom">
+        <div className="flex justify-around items-center h-16">
+          {navItems.map((item) => {
+             // Simplify logic: show top 4 items, or group if too many?
+             // For simplicity, we just render them. Flex justify-around handles spacing.
+             const isActive = currentTab === item.id;
+             return (
+              <button
+                key={item.id}
+                onClick={() => onTabChange(item.id)}
+                className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${
+                  isActive ? 'text-blue-600' : 'text-slate-500'
+                }`}
+              >
+                <div className={`${isActive ? 'bg-blue-50 rounded-full p-1' : ''}`}>
+                    {React.cloneElement(item.icon as React.ReactElement, { size: 20 })}
+                </div>
+                <span className="text-[10px] font-medium">{item.label}</span>
+              </button>
+             );
+          })}
+        </div>
+      </nav>
     </div>
   );
 };
